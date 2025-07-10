@@ -178,8 +178,11 @@ func (p *ProviderAggregator) Init() error {
 
 // Provide calls the provide method of every providers.
 func (p *ProviderAggregator) Provide(configurationChan chan<- dynamic.Message, pool *safe.Pool) error {
+	var err error
 	if p.fileProvider != nil {
-		p.launchProvider(configurationChan, pool, p.fileProvider)
+		if err = p.launchProvider(configurationChan, pool, p.fileProvider); err != nil {
+			return err
+		}
 	}
 
 	for _, prd := range p.providers {
@@ -191,16 +194,20 @@ func (p *ProviderAggregator) Provide(configurationChan chan<- dynamic.Message, p
 	// internal provider must be the last because we use it to know if all the providers are loaded.
 	// ConfigurationWatcher will wait for this requiredProvider before applying configurations.
 	if p.internalProvider != nil {
-		p.launchProvider(configurationChan, pool, p.internalProvider)
+		err = p.launchProvider(configurationChan, pool, p.internalProvider)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (p *ProviderAggregator) launchProvider(configurationChan chan<- dynamic.Message, pool *safe.Pool, prd provider.Provider) {
+func (p *ProviderAggregator) launchProvider(configurationChan chan<- dynamic.Message, pool *safe.Pool, prd provider.Provider) error {
 	jsonConf, err := redactor.RemoveCredentials(prd)
 	if err != nil {
 		log.Debug().Err(err).Msgf("Cannot marshal the provider configuration %T", prd)
+		return err
 	}
 
 	log.Info().Msgf("Starting provider %T", prd)
@@ -208,6 +215,7 @@ func (p *ProviderAggregator) launchProvider(configurationChan chan<- dynamic.Mes
 
 	if err := maybeThrottledProvide(prd, p.providersThrottleDuration)(configurationChan, pool); err != nil {
 		log.Error().Err(err).Msgf("Cannot start the provider %T", prd)
-		return
+		return err
 	}
+	return nil
 }
